@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
-	"../utils"
+	"github.com/hirasawayuki/block_chain/utils"
 )
 
 const (
@@ -19,6 +20,8 @@ const (
 	MiningSender = "THE BLOCKCHAIN"
 	// MiningReward is a mining reward
 	MiningReward = 1.0
+	// MiningTimerSec is mining time interval
+	MiningTimerSec = 20
 )
 
 // Block is a structure with nonce, previousHash, timestamp, transactions
@@ -40,12 +43,12 @@ func (b *Block) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Timestamp    int64          `j:"timestamp"`
 		Nonce        int            `j:"nonce"`
-		PreviousHash [32]byte       `j:"previous_hash"`
+		PreviousHash string         `j:"previous_hash"`
 		Transactions []*Transaction `j:"transactions"`
 	}{
 		Timestamp:    b.timestamp,
 		Nonce:        b.nonce,
-		PreviousHash: b.previousHash,
+		PreviousHash: fmt.Sprintf("%x", b.previousHash),
 		Transactions: b.transactions,
 	})
 }
@@ -77,6 +80,7 @@ type Blockchain struct {
 	chain             []*Block
 	blockchainAddress string
 	port              uint16
+	mux               sync.Mutex
 }
 
 // NewBlockChain returns a Blockchain struct
@@ -87,6 +91,19 @@ func NewBlockChain(blockchainAddress string, port uint16) *Blockchain {
 	bc.CreateBlock(0, b.Hash())
 	bc.port = port
 	return bc
+}
+
+func (bc *Blockchain) TransactionPool() []*Transaction {
+	return bc.transactionPool
+}
+
+// MarshalJSON is returns a Block struct slice
+func (bc *Blockchain) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Blocks []*Block `json:"chain"`
+	}{
+		Blocks: bc.chain,
+	})
 }
 
 // CreateBlock is create Block and append chain.
@@ -110,6 +127,11 @@ func (bc *Blockchain) Print() {
 		fmt.Printf("chain:         %d\n", i)
 		b.Print()
 	}
+}
+
+func (bc *Blockchain) CreateTransaction(sender string, recipient string, value float32, senderPublicKey *ecdsa.PublicKey, s *utils.Signature) bool {
+	isTransacted := bc.AddTransaction(sender, recipient, value, senderPublicKey, s)
+	return isTransacted
 }
 
 // AddTransaction is create Transaction and add BlockChain struct
@@ -169,12 +191,24 @@ func (bc *Blockchain) ProofOfWork() int {
 
 // Mining is add transactions and pay miner for mining.
 func (bc *Blockchain) Mining() bool {
+	bc.mux.Lock()
+	defer bc.mux.Unlock()
+
+	if len(bc.transactionPool) == 0 {
+		return false
+	}
+
 	bc.AddTransaction(MiningSender, bc.blockchainAddress, MiningReward, nil, nil)
 	nonce := bc.ProofOfWork()
 	previousHash := bc.LastBlock().Hash()
 	bc.CreateBlock(nonce, previousHash)
 	fmt.Println("action=mining, status=success")
 	return true
+}
+
+func (bc *Blockchain) StartMining() {
+	bc.Mining()
+	_ = time.AfterFunc(time.Second*MiningTimerSec, bc.StartMining)
 }
 
 // CaluculateTotalAmount is caluculate the wallet balance that matches the blockchain address
@@ -223,5 +257,36 @@ func (t *Transaction) MarshalJSON() ([]byte, error) {
 		t.senderBlockchainAddress,
 		t.recipientBlockchainAddress,
 		t.value,
+	})
+}
+
+type TransactionRequest struct {
+	SenderBlockchainAddress    *string  `json:"sender_blockchain_address,omitempty"`
+	RecipientBlockchainAddress *string  `json:"recipient_blockchain_address,omitempty"`
+	SenderPublicKey            *string  `json:"sender_public_key,omitempty"`
+	Value                      *float32 `json:"value,omitempty"`
+	Signature                  *string  `json:"signature,omitempty"`
+}
+
+func (tr *TransactionRequest) Validate() bool {
+	if tr.SenderBlockchainAddress == nil ||
+		tr.RecipientBlockchainAddress == nil ||
+		tr.SenderPublicKey == nil ||
+		tr.Value == nil ||
+		tr.Signature == nil {
+		return false
+	}
+	return true
+}
+
+type AmountResponse struct {
+	Amount float32 `json:"amount"`
+}
+
+func (ar *AmountResponse) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Amount float32 `json:"amount"`
+	}{
+		Amount: ar.Amount,
 	})
 }
