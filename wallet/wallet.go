@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"../utils"
 	"github.com/btcsuite/btcutil/base58"
+	"github.com/hirasawayuki/block_chain/utils"
 	"golang.org/x/crypto/ripemd160"
 )
 
@@ -99,12 +99,25 @@ func (w *Wallet) PublicKey() *ecdsa.PublicKey {
 
 // PublicKeyStr is returns string that convert publick key data(X, Y) from []byte to string
 func (w *Wallet) PublicKeyStr() string {
-	return fmt.Sprintf("X: %x, Y: %x", w.publicKey.X.Bytes(), w.publicKey.Y.Bytes())
+	return fmt.Sprintf("%064x%064x", w.publicKey.X.Bytes(), w.publicKey.Y.Bytes())
 }
 
 // BlockchainAddress is returns a blockchain address strings
 func (w *Wallet) BlockchainAddress() string {
 	return w.blockchainAddress
+}
+
+// MarshalJSON returns the JSON encoding Wallet struct.
+func (w *Wallet) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		PrivateKey        string `json:"private_key,omitempty"`
+		PublicKey         string `json:"public_key,omitempty"`
+		BlockchainAddress string `json:"blockchain_address,omitempty"`
+	}{
+		PrivateKey:        w.PrivateKeyStr(),
+		PublicKey:         w.PublicKeyStr(),
+		BlockchainAddress: w.blockchainAddress,
+	})
 }
 
 // Transaction is struct of transaction with senderPrivateKey, senderPublickKey, senderBlockchainAddress, recipientBlockchainAddress, value
@@ -116,6 +129,7 @@ type Transaction struct {
 	value                      float32
 }
 
+// MarshalJSON is returns a struct with sender_blockchain_address, recipient_blockchain_address, value
 func (t *Transaction) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		SenderBlockchainAddress    string  `json:"sender_blockchain_address,omitempty"`
@@ -139,4 +153,23 @@ func (t *Transaction) GenerateSignature() *utils.Signature {
 	h := sha256.Sum256(m)
 	r, s, _ := ecdsa.Sign(rand.Reader, t.senderPrivateKey, h[:])
 	return &utils.Signature{R: r, S: s}
+}
+
+type TransactionRequest struct {
+	SenderPrivateKey           *string `json:"sender_private_key,omitempty"`
+	SenderBlockchainAddress    *string `json:"sender_blockchain_address,omitempty"`
+	RecipientBlockchainAddress *string `json:"recipient_blockchain_address,omitempty"`
+	SenderPublicKey            *string `json:"sender_public_key,omitempty"`
+	Value                      *string `json:"value,omitempty"`
+}
+
+func (tr *TransactionRequest) Validate() bool {
+	if tr.SenderPrivateKey == nil ||
+		tr.SenderBlockchainAddress == nil ||
+		tr.RecipientBlockchainAddress == nil ||
+		tr.SenderPublicKey == nil ||
+		tr.Value == nil {
+		return false
+	}
+	return true
 }
