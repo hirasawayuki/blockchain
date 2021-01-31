@@ -71,10 +71,6 @@
         })
       }
 
-      $('#reload_wallet').click(function(){
-        reload_amount();
-      })
-
       setInterval(reload_amount, 3000)
     })
   </script>
@@ -83,8 +79,6 @@
   <div>
     <h1>Wallet</h1>
     <div id="wallet_amount">0</div>
-    <button id="reload_wallet">Reload Wallet</button>
-
     <p>Public Key</p>
     <textarea id="public_key" cols="100" rows="2"></textarea>
     <p>Private Key</p>
